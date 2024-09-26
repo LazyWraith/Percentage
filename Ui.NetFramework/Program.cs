@@ -19,6 +19,7 @@ using Percentage.Ui.NetFramework.Properties;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using PowerLineStatus = System.Windows.Forms.PowerLineStatus;
+using System.Collections.Generic;
 
 namespace Percentage.Ui.NetFramework;
 
@@ -116,7 +117,7 @@ internal class Program
             using var detailsMenuItem = new ToolStripMenuItem("Battery details");
             using var feedbackMenuItem = new ToolStripMenuItem("Send a feedback");
             using var menu = new ContextMenuStrip
-                { Items = { detailsMenuItem, settingsMenuItem, feedbackMenuItem, exitMenuItem } };
+            { Items = { detailsMenuItem, settingsMenuItem, feedbackMenuItem, exitMenuItem } };
             using var notifyIcon = new NotifyIcon { Visible = true, ContextMenuStrip = menu };
 
             // This empty icon is required to get the background color of the tray icon in the first "Update" method call.
@@ -201,7 +202,7 @@ internal class Program
                 // treat it as a light color.
                 return rgbValues.Count(x => x > 128) > 2;
             }
-            
+
             void ActivateDialog<T>(Action<T> windowCreated = null, Action<T> windowClosed = null)
                 where T : Window, new()
             {
@@ -251,6 +252,11 @@ internal class Program
             Brush normalBrush;
             SetNormalBrush();
 
+            // Initialize variables to be used to calculate battery remaining life
+            const int QueueSize = 5;
+            Queue<DateTimeOffset> currentTimestamp = new Queue<DateTimeOffset>(QueueSize);
+            Queue<int> currentBatteryLevel = new Queue<int>(QueueSize);
+
             // Show balloon notification when the tray icon is clicked.
             notifyIcon.MouseClick += (_, e) =>
             {
@@ -265,8 +271,15 @@ internal class Program
             {
                 if (e.Mode is PowerModes.Resume or PowerModes.StatusChange)
                 {
+                    ResetBatteryEstimation();
                     Update();
                 }
+            };
+
+            // Update status on battery change
+            Battery.AggregateBattery.ReportUpdated += (_, e) =>
+            {
+                Update();
             };
 
             // Update battery status when the display settings change.
@@ -287,21 +300,25 @@ internal class Program
             // This event can be triggered multiple times when Windows changes between dark and light theme.
             SystemEvents.UserPreferenceChanged += (_, _) => subject.OnNext(false);
 
+
             // Initial update.
             Update();
 
             // Setup timer to update the tray icon.
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Default.RefreshSeconds) };
-            timer.Tick += (_, _) => Update();
-            timer.Start();
-
+            // var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Default.RefreshSeconds) };
+            // timer.Tick += (_, _) =>
+            // {
+            // Update();
+            // };
+            // timer.Start();
+            
             // Handle settings change.
             Default.PropertyChanged += (_, e) =>
             {
                 switch (e.PropertyName)
                 {
                     case nameof(Default.RefreshSeconds):
-                        timer.Interval = TimeSpan.FromSeconds(Default.RefreshSeconds);
+                        // timer.Interval = TimeSpan.FromSeconds(Default.RefreshSeconds);
                         break;
                     case nameof(Default.ChargingColor):
                         chargingBrush.Color = Default.ChargingColor;
@@ -341,6 +358,12 @@ internal class Program
             // Run application and hold the thread.
             app.Run();
 
+            void ResetBatteryEstimation()
+            {
+                currentTimestamp.Clear();
+                currentBatteryLevel.Clear();
+            }
+
             // Local function to update the tray icon.
             void Update()
             {
@@ -350,6 +373,54 @@ internal class Program
                 var notificationType = NotificationType.None;
                 Brush brush;
                 string trayIconText;
+
+                // Calculate battery remaining life
+                var remainingTime = 0;
+                var percentChange = 0;
+                var resetThresholdLow = 0;
+                var resetThresholdHigh = 864;
+                var timeDifference = new TimeSpan(0);
+
+                // Reset estimation when charging
+                if (batteryChargeStatus.HasFlag(BatteryChargeStatus.Charging))
+                {
+                    ResetBatteryEstimation();
+                }
+                // Update the current timestamp and battery level
+                if (currentBatteryLevel.Count == 0 || percent != currentBatteryLevel.Last())
+                {
+                    TimeSpan reportTimeDelta = TimeSpan.Zero;
+
+                    if (currentTimestamp.Count != 0)
+                    {
+                        reportTimeDelta = DateTimeOffset.UtcNow - currentTimestamp.Last();
+                    }
+
+                    // Enqueue the current timestamp and battery level
+                    currentTimestamp.Enqueue(DateTimeOffset.UtcNow);
+                    currentBatteryLevel.Enqueue(percent);
+
+                    // Ensure the queue size doesn't exceed the specified limit
+                    if (currentTimestamp.Count > QueueSize)
+                    {
+                        currentTimestamp.Dequeue();
+                        currentBatteryLevel.Dequeue();
+                    }
+                    var oldestTimestamp = currentTimestamp.First();
+                    var newestTimestamp = currentTimestamp.Last();
+
+                    var oldestBatteryLevel = currentBatteryLevel.First();
+                    var newestBatteryLevel = currentBatteryLevel.Last();
+
+                    percentChange = newestBatteryLevel - oldestBatteryLevel;
+                    timeDifference = newestTimestamp - oldestTimestamp;
+
+                    if (currentBatteryLevel.Count >= 2 && (reportTimeDelta.TotalSeconds > resetThresholdHigh || reportTimeDelta.TotalSeconds < resetThresholdLow))
+                    {
+                        ResetBatteryEstimation();
+                    }
+                }
+
                 if (batteryChargeStatus.HasFlag(BatteryChargeStatus.NoSystemBattery))
                 {
                     // When no battery detected.
@@ -408,6 +479,7 @@ internal class Program
                         brush = chargingBrush;
                         notifyIcon.BalloonTipIcon = ToolTipIcon.Info;
                         var report = Battery.AggregateBattery.GetReport();
+
                         var chargeRateInMilliwatts = report.ChargeRateInMilliwatts;
                         if (chargeRateInMilliwatts > 0)
                         {
@@ -418,10 +490,13 @@ internal class Program
                             if (fullChargeCapacityInMilliwattHours.HasValue &&
                                 remainingCapacityInMilliwattHours.HasValue)
                             {
+                                double chargeRateInWatts = (double)chargeRateInMilliwatts / 1000;
+                                double remainingCapacityInWattHours = (double)remainingCapacityInMilliwattHours.Value / 1000;
+                                double fullChargeCapacityInWattHours = (double)fullChargeCapacityInMilliwattHours.Value / 1000;
                                 notifyIcon.BalloonTipText = Helper.GetReadableTimeSpan(TimeSpan.FromHours(
                                     (fullChargeCapacityInMilliwattHours.Value -
                                      remainingCapacityInMilliwattHours.Value) /
-                                    (double)chargeRateInMilliwatts.Value)) + " until fully charged";
+                                    (double)chargeRateInMilliwatts.Value)) + " remaining\nRate: " + Math.Round(chargeRateInWatts, 1) + "W";
                             }
                         }
                         else
@@ -472,6 +547,25 @@ internal class Program
                             notifyIcon.BalloonTipText =
                                 Helper.GetReadableTimeSpan(TimeSpan.FromSeconds(powerStatus.BatteryLifeRemaining)) +
                                 " remaining";
+                        }
+                        else if (currentTimestamp.Count >= 2)
+                        {
+                            if (percentChange != 0)
+                            {
+                                var report = Battery.AggregateBattery.GetReport();
+                                var fullChargeCapacityInMilliwattHours = report.FullChargeCapacityInMilliwattHours;
+                                var remainingCapacityInMilliwattHours = report.RemainingCapacityInMilliwattHours;
+                                remainingTime = (int)(timeDifference.TotalSeconds / percentChange * percent * -1);
+                                var depletionRateInMiliWatts = (int)(-36 * percentChange / timeDifference.TotalSeconds * report.FullChargeCapacityInMilliwattHours);
+                                double depletionRateInWatts = (double)depletionRateInMiliWatts / 1000;
+                                double remainingCapacityInWattHours = (double)remainingCapacityInMilliwattHours.Value / 1000;
+                                double fullChargeCapacityInWattHours = (double)fullChargeCapacityInMilliwattHours.Value / 1000;
+                                notifyIcon.BalloonTipTitle = percent + "% " +
+                                                         (powerStatus.PowerLineStatus == PowerLineStatus.Online
+                                                             ? "connected (not charging)"
+                                                             : "on battery");
+                                notifyIcon.BalloonTipText = Helper.GetReadableTimeSpan(TimeSpan.FromSeconds(remainingTime)) + " remaining\nRate: " + Math.Round(depletionRateInWatts, 1) + "W";
+                            }
                         }
                         else
                         {
@@ -599,7 +693,7 @@ internal class Program
 
         T ExecuteWithRetry<T>(Func<T> function, bool throwWhenFail = true)
         {
-            for (var i = 0;;)
+            for (var i = 0; ;)
             {
                 try
                 {
