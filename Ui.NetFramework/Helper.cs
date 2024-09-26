@@ -12,10 +12,10 @@ internal static class Helper
         return timeSpan.TotalSeconds < 60
             ? "less than 1 minute"
             : (hours > 0
-                  ? hours > 1 ? hours + " hours " : "1 hour "
+                  ? hours > 1 ? hours + "hr " : "1hr "
                   : null) +
               (minutes > 0
-                  ? minutes > 1 ? minutes + " minutes" : "1 minute"
+                  ? minutes > 1 ? minutes + "min" : "1min"
                   : null);
     }
 
