@@ -1,12 +1,10 @@
 # Battery Percentage Icon
 1. See your battery percentage and charging status in the Windows system tray.
 2. Get Windows notification when your battery is critical, low, high, and full.
+3. Calculate battery remaining time for devices that do not support battery remaining time in their drivers (e.g. HP Probook and Elitebook).
 
-#### Dark theme
-![Application screenshot](https://raw.githubusercontent.com/soleon/percentage/master/dark.png)
-
-#### Light theme
-![Application screenshot](https://raw.githubusercontent.com/soleon/percentage/master/light.png)
+#### Preview
+![Application screenshot](https://raw.githubusercontent.com/soleon/percentage/master/preview.png)
 
 #### Battery Details
 ![Battery Details screenshot](https://raw.githubusercontent.com/soleon/Percentage/master/details.png)
@@ -18,6 +16,3 @@
 This application requires:
 1. [the latest .NET Framework 4.8](https://dotnet.microsoft.com/download/dotnet-framework/net48).
 2. Windows 10 with Anniversary Update (10.0 build 14393) or later
-
-## Installing
-Get it from Microsoft Store: [Battery Percentage Icon](https://www.microsoft.com/store/productId/9PCKT2B7DZMW).
