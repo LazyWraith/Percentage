@@ -4,13 +4,13 @@
 3. Calculate battery remaining time for devices that do not support battery remaining time in their drivers (e.g. HP Probook and Elitebook).
 
 #### Preview
-![Application screenshot](https://raw.githubusercontent.com/soleon/percentage/master/preview.png)
+![Application screenshot](https://raw.githubusercontent.com/LazyWraith/Percentage/master/preview.png)
 
 #### Battery Details
-![Battery Details screenshot](https://raw.githubusercontent.com/soleon/Percentage/master/details.png)
+![Battery Details screenshot](https://raw.githubusercontent.com/LazyWraith/Percentage/master/details.png)
 
 #### Settings
-![Settings screenshot](https://raw.githubusercontent.com/soleon/Percentage/master/settings.png)
+![Settings screenshot](https://raw.githubusercontent.com/LazyWraith/Percentage/master/settings.png)
 
 ## Requirement
 This application requires:
